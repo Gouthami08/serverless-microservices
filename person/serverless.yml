@@ -1,0 +1,72 @@
+org: gouthamimn
+app: person-microservice
+service: person-microservice
+
+useDotenv: true
+variablesResolutionMode: 20210326
+
+frameworkVersion: '2' 
+
+plugins:
+  - serverless-plugin-typescript
+  - serverless-offline
+
+provider:
+  name: aws
+  runtime: nodejs14.x
+  stage: ${opt:stage}
+  region: ${env:REGION}
+  environment:
+    REGION: ${env:REGION}
+    ACCOUNT_ID: ${env:ACCOUNT_ID}
+    PERSONS_DYNAMODB_TABLE_NAME: ${env:PERSONS_DYNAMODB_TABLE_NAME}
+  iam:
+    role:
+      statements:
+        - Effect: "Allow"
+          Action:
+            - dynamodb:Scan
+            - dynamodb:PutItem
+          Resource: arn:aws:dynamodb:${env:REGION}:${env:ACCOUNT_ID}:table/${env:PERSONS_DYNAMODB_TABLE_NAME}
+        - Effect: "Allow"
+          Action:
+            - sqs:SendMessage
+          Resource:
+            - arn:aws:sqs:${env:REGION}:${env:ACCOUNT_ID}:${env:PERSONS_EVENT_QUEUE}
+
+functions:
+  person-create:
+    handler: src/handlers/person.create
+    events:
+      - http:
+          path: person
+          method: post
+          request:
+            schema:
+              application/json: ${file(src/schemas/person/create.json)}
+    environment:
+      PERSONS_EVENT_QUEUE: ${env:PERSONS_EVENT_QUEUE}
+  person-get:
+    handler: src/handlers/person.list
+    events:
+      - http:
+          path: person
+          method: get
+resources:
+  Resources:
+    persons:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${env:PERSONS_DYNAMODB_TABLE_NAME}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: firstName
+            AttributeType: S
+        KeySchema:
+          - AttributeName: firstName
+            KeyType: HASH
+    PersonCreateEventQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: ${env:PERSONS_EVENT_QUEUE}
+        FifoQueue: true
